@@ -185,6 +185,8 @@ func New(bkd backend.Backend) *Server {
 		"STORE":   func() Handler { return &Store{} },
 		"COPY":    func() Handler { return &Copy{} },
 		"UID":     func() Handler { return &Uid{} },
+
+		"UNSELECT": func() Handler { return &Unselect{} },
 	}
 
 	return s
