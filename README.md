@@ -138,6 +138,7 @@ includes:
 * [SPECIAL-USE](https://tools.ietf.org/html/rfc6154)
 * [CHILDREN](https://tools.ietf.org/html/rfc3348)
 * [UNSELECT](https://tools.ietf.org/html/rfc3691)
+* [COMPRESS](https://tools.ietf.org/html/rfc4978)
 
 Support for other extensions is provided via separate packages. See below.
 
@@ -150,7 +151,6 @@ wiki](https://github.com/emersion/go-imap/wiki/Using-extensions#using-client-ext
 to learn how to use them.
 
 * [APPENDLIMIT](https://github.com/emersion/go-imap-appendlimit)
-* [COMPRESS](https://github.com/emersion/go-imap-compress)
 * [ENABLE](https://github.com/emersion/go-imap-enable)
 * [ID](https://github.com/ProtonMail/go-imap-id)
 * [IDLE](https://github.com/emersion/go-imap-idle)
