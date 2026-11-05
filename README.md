@@ -1,10 +1,14 @@
 # go-imap
 
 [![godocs.io](https://godocs.io/github.com/emersion/go-imap?status.svg)](https://godocs.io/github.com/emersion/go-imap)
-[![builds.sr.ht status](https://builds.sr.ht/~emersion/go-imap/commits.svg)](https://builds.sr.ht/~emersion/go-imap/commits?)
+[![builds.sr.ht status](https://builds.sr.ht/~emersion/go-imap/commits/master.svg)](https://builds.sr.ht/~emersion/go-imap/commits/master?)
 
 An [IMAP4rev1](https://tools.ietf.org/html/rfc3501) library written in Go. It
 can be used to build a client and/or a server.
+
+> **Note**
+> This is the README for go-imap v1. go-imap v2 is in development, see the
+> [v2 branch](https://github.com/emersion/go-imap/tree/v2) for more details.
 
 ## Usage
 
