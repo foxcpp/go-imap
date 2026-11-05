@@ -430,3 +430,34 @@ func TestMatchIssue298Regression(t *testing.T) {
 		t.Errorf("Expected message #3 to not match search criteria")
 	}
 }
+
+func TestMatchDateSameDay(t *testing.T) {
+	day := time.Date(testInternalDate.Year(), testInternalDate.Month(), testInternalDate.Day(), 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name     string
+		criteria *imap.SearchCriteria
+		res      bool
+	}{
+		{"SINCE same day", &imap.SearchCriteria{Since: day}, true},
+		{"SINCE next day", &imap.SearchCriteria{Since: day.Add(24 * time.Hour)}, false},
+		{"ON same day", &imap.SearchCriteria{Since: day, Before: day.Add(24 * time.Hour)}, true},
+		{"ON previous day", &imap.SearchCriteria{Since: day.Add(-24 * time.Hour), Before: day}, false},
+		{"BEFORE same day", &imap.SearchCriteria{Before: day}, false},
+	}
+
+	for _, test := range tests {
+		e, err := message.Read(strings.NewReader(testMailString))
+		if err != nil {
+			t.Fatal("Expected no error while reading entity, got:", err)
+		}
+
+		ok, err := Match(e, 0, 0, testInternalDate, nil, test.criteria)
+		if err != nil {
+			t.Fatal("Expected no error while matching entity, got:", err)
+		}
+		if ok != test.res {
+			t.Errorf("%s: expected match=%v, got %v", test.name, test.res, ok)
+		}
+	}
+}

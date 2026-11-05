@@ -220,7 +220,8 @@ func matchDate(date time.Time, c *imap.SearchCriteria) bool {
 	// RFC 3501 explicitly requires zone unaware date comparison.
 	date = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, time.UTC)
 
-	if !c.Since.IsZero() && !date.After(c.Since) {
+	// SINCE is inclusive: "within or later than the specified date".
+	if !c.Since.IsZero() && date.Before(c.Since) {
 		return false
 	}
 	if !c.Before.IsZero() && !date.Before(c.Before) {
