@@ -84,9 +84,13 @@ func ErrNoStatusResp() error {
 
 // An IMAP server.
 type Server struct {
-	locker    sync.Mutex
-	listeners map[net.Listener]struct{}
-	conns     map[Conn]struct{}
+	locker     sync.Mutex
+	listeners  map[net.Listener]struct{}
+	conns      map[Conn]net.Conn
+	pending    map[net.Conn]struct{}
+	listenerWg sync.WaitGroup
+	connWg     sync.WaitGroup
+	closed     bool
 
 	commands   map[string]HandlerFactory
 	auths      map[string]SASLServerFactory
@@ -120,7 +124,8 @@ type Server struct {
 func New(bkd backend.Backend) *Server {
 	s := &Server{
 		listeners: make(map[net.Listener]struct{}),
-		conns:     make(map[Conn]struct{}),
+		conns:     make(map[Conn]net.Conn),
+		pending:   make(map[net.Conn]struct{}),
 		Backend:   bkd,
 		ErrorLog:  log.New(os.Stderr, "imap/server: ", log.LstdFlags),
 	}
@@ -193,14 +198,21 @@ func New(bkd backend.Backend) *Server {
 // Serve accepts incoming connections on the Listener l.
 func (s *Server) Serve(l net.Listener) error {
 	s.locker.Lock()
+	if s.closed {
+		s.locker.Unlock()
+		l.Close()
+		return net.ErrClosed
+	}
 	s.listeners[l] = struct{}{}
+	s.listenerWg.Add(1)
 	s.locker.Unlock()
 
 	defer func() {
 		s.locker.Lock()
-		defer s.locker.Unlock()
 		l.Close()
 		delete(s.listeners, l)
+		s.locker.Unlock()
+		s.listenerWg.Done()
 	}()
 
 	for {
@@ -209,12 +221,27 @@ func (s *Server) Serve(l net.Listener) error {
 			return err
 		}
 
+		s.locker.Lock()
+		if s.closed {
+			s.locker.Unlock()
+			c.Close()
+			return nil
+		}
+		s.pending[c] = struct{}{}
+		s.connWg.Add(1)
+		s.locker.Unlock()
+
 		var conn Conn = newConn(s, c)
 		for _, ext := range s.extensions {
 			if ext, ok := ext.(ConnExtension); ok {
 				conn = ext.NewConn(conn)
 			}
 		}
+
+		s.locker.Lock()
+		s.conns[conn] = c
+		delete(s.pending, c)
+		s.locker.Unlock()
 
 		go s.serveConn(conn)
 	}
@@ -257,15 +284,12 @@ func (s *Server) ListenAndServeTLS() error {
 }
 
 func (s *Server) serveConn(conn Conn) error {
-	s.locker.Lock()
-	s.conns[conn] = struct{}{}
-	s.locker.Unlock()
-
 	defer func() {
 		s.locker.Lock()
-		defer s.locker.Unlock()
 		conn.Close()
 		delete(s.conns, conn)
+		s.locker.Unlock()
+		s.connWg.Done()
 	}()
 
 	return conn.serve(conn)
@@ -292,19 +316,36 @@ func (s *Server) ForEachConn(f func(Conn)) {
 	}
 }
 
-// Stops listening and closes all current connections.
+// Close stops listening and closes all current connections without waiting for
+// active commands to finish. Connection cleanup is performed by the serving
+// goroutines after their current command handlers return.
 func (s *Server) Close() error {
 	s.locker.Lock()
-	defer s.locker.Unlock()
-
+	s.closed = true
 	for l := range s.listeners {
 		l.Close()
 	}
 
-	for conn := range s.conns {
+	for conn := range s.pending {
 		conn.Close()
 	}
+	for _, conn := range s.conns {
+		conn.Close()
+	}
+	s.locker.Unlock()
 
+	return nil
+}
+
+// Shutdown closes the server and waits for all listeners and active
+// connections to finish. It must not be called from a connection handler or
+// connection extension callback.
+func (s *Server) Shutdown() error {
+	if err := s.Close(); err != nil {
+		return err
+	}
+	s.listenerWg.Wait()
+	s.connWg.Wait()
 	return nil
 }
 
