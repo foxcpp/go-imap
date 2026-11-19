@@ -24,6 +24,8 @@ const (
 const (
 	crlf    = "\r\n"
 	nilAtom = "NIL"
+
+	maxListDepth = 1000
 )
 
 // TODO: add CTL to atomSpecials
@@ -134,13 +136,73 @@ func trimSuffix(str string, suffix rune) string {
 // An IMAP reader.
 type Reader struct {
 	MaxLiteralSize uint32 // The maximum literal size.
+	MaxCommandSize int64  // The maximum size of a command, excluding literal data.
 
 	reader
 
 	continues chan<- bool
 
-	brackets   int
-	inRespCode bool
+	brackets        int
+	inRespCode      bool
+	listDepth       int
+	commandSize     int64
+	countCommand    bool
+	inLiteral       bool
+	lastRuneSize    int
+	lastRuneCounted bool
+}
+
+func (r *Reader) ReadRune() (rune, int, error) {
+	char, size, err := r.reader.ReadRune()
+	if err != nil {
+		return char, size, err
+	}
+
+	r.lastRuneSize = size
+	r.lastRuneCounted = r.countCommand && !r.inLiteral
+	if r.lastRuneCounted {
+		r.commandSize += int64(size)
+		if r.MaxCommandSize > 0 && r.commandSize > r.MaxCommandSize {
+			return 0, 0, errors.New("imap: command size exceeded")
+		}
+	}
+	return char, size, nil
+}
+
+func (r *Reader) UnreadRune() error {
+	if err := r.reader.UnreadRune(); err != nil {
+		return err
+	}
+	if r.lastRuneCounted {
+		r.commandSize -= int64(r.lastRuneSize)
+	}
+	r.lastRuneSize = 0
+	r.lastRuneCounted = false
+	return nil
+}
+
+func (r *Reader) ReadString(delim byte) (string, error) {
+	r.lastRuneSize = 0
+	r.lastRuneCounted = false
+	if !r.countCommand || r.inLiteral || r.MaxCommandSize <= 0 {
+		return r.reader.ReadString(delim)
+	}
+
+	var line bytes.Buffer
+	var b [1]byte
+	for {
+		if _, err := io.ReadFull(r.reader, b[:]); err != nil {
+			return line.String(), err
+		}
+		line.WriteByte(b[0])
+		r.commandSize++
+		if r.commandSize > r.MaxCommandSize {
+			return "", errors.New("imap: command size exceeded")
+		}
+		if b[0] == delim {
+			return line.String(), nil
+		}
+	}
 }
 
 func (r *Reader) ReadSp() error {
@@ -262,9 +324,12 @@ func (r *Reader) ReadLiteral() (Literal, error) {
 
 	// Read literal
 	b := make([]byte, n)
+	r.inLiteral = true
 	if _, err := io.ReadFull(r, b); err != nil {
+		r.inLiteral = false
 		return nil, err
 	}
+	r.inLiteral = false
 	return bytes.NewBuffer(b), nil
 }
 
@@ -369,6 +434,11 @@ func (r *Reader) ReadList() (fields []interface{}, err error) {
 		err = newParseError("list doesn't start with an open parenthesis")
 		return
 	}
+	if r.listDepth >= maxListDepth {
+		return nil, errors.New("imap: list nesting depth exceeded")
+	}
+	r.listDepth++
+	defer func() { r.listDepth-- }()
 
 	fields, err = r.ReadFields()
 	if err != nil {
@@ -386,6 +456,10 @@ func (r *Reader) ReadList() (fields []interface{}, err error) {
 }
 
 func (r *Reader) ReadLine() (fields []interface{}, err error) {
+	r.commandSize = 0
+	r.countCommand = true
+	defer func() { r.countCommand = false }()
+
 	fields, err = r.ReadFields()
 	if err != nil {
 		return

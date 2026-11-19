@@ -14,6 +14,8 @@ import (
 	"github.com/emersion/go-imap/responses"
 )
 
+const maxCommandSize = 50 * 1024
+
 // Conn is a connection to a client.
 type Conn interface {
 	io.Reader
@@ -109,6 +111,7 @@ func newConn(s *Server, c net.Conn) *conn {
 	if s.MaxLiteralSize > 0 {
 		conn.Conn.MaxLiteralSize = s.MaxLiteralSize
 	}
+	conn.Conn.Reader.MaxCommandSize = maxCommandSize
 
 	go conn.send()
 

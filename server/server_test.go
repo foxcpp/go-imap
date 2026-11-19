@@ -27,6 +27,7 @@ func testServer(t *testing.T) (s *server.Server, conn net.Conn) {
 
 	s = server.New(bkd)
 	s.AllowInsecureAuth = true
+	s.Addr = l.Addr().String()
 
 	go s.Serve(l)
 	t.Cleanup(func() { s.Close() })
@@ -51,6 +52,85 @@ func TestServer_greeting(t *testing.T) {
 
 	if greeting != "* OK [CAPABILITY IMAP4rev1 "+builtinExtensions+" AUTH=PLAIN] IMAP4rev1 Service Ready" {
 		t.Fatal("Bad greeting:", greeting)
+	}
+}
+
+func TestServer_ClosesConnectionForOversizedCommand(t *testing.T) {
+	s, conn := testServer(t)
+	defer s.Close()
+	defer conn.Close()
+
+	if _, err := bufio.NewReader(conn).ReadString('\n'); err != nil {
+		t.Fatal("Cannot read greeting:", err)
+	}
+	if _, err := conn.Write([]byte("a " + strings.Repeat("x", 50*1024) + "\r\n")); err != nil {
+		t.Fatal("Cannot send oversized command:", err)
+	}
+
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal("Cannot set read deadline:", err)
+	}
+	if _, err := conn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("Expected server to close oversized-command connection")
+	}
+}
+
+func TestServer_ContinuesServingAfterOversizedCommand(t *testing.T) {
+	s, firstConn := testServer(t)
+	defer s.Close()
+	defer firstConn.Close()
+
+	if _, err := bufio.NewReader(firstConn).ReadString('\n'); err != nil {
+		t.Fatal("Cannot read greeting:", err)
+	}
+	if _, err := firstConn.Write([]byte("a " + strings.Repeat("x", 50*1024) + "\r\n")); err != nil {
+		t.Fatal("Cannot send oversized command:", err)
+	}
+	if err := firstConn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal("Cannot set read deadline:", err)
+	}
+	if _, err := firstConn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("Expected server to close oversized-command connection")
+	}
+
+	secondConn, err := net.Dial("tcp", s.Addr)
+	if err != nil {
+		t.Fatal("Cannot connect to server after rejecting oversized command:", err)
+	}
+	defer secondConn.Close()
+
+	secondReader := bufio.NewReader(secondConn)
+	if _, err := secondReader.ReadString('\n'); err != nil {
+		t.Fatal("Cannot read greeting on second connection:", err)
+	}
+	if _, err := secondConn.Write([]byte("a NOOP\r\n")); err != nil {
+		t.Fatal("Cannot send NOOP on second connection:", err)
+	}
+	if err := secondConn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal("Cannot set second connection read deadline:", err)
+	}
+	if response, err := secondReader.ReadString('\n'); err != nil || !strings.HasPrefix(response, "a OK ") {
+		t.Fatalf("Second connection did not process NOOP: response %q, error %v", response, err)
+	}
+}
+
+func TestServer_ClosesConnectionForOverNestedCommand(t *testing.T) {
+	s, conn := testServer(t)
+	defer s.Close()
+	defer conn.Close()
+
+	if _, err := bufio.NewReader(conn).ReadString('\n'); err != nil {
+		t.Fatal("Cannot read greeting:", err)
+	}
+	command := "a NOOP " + strings.Repeat("(", 1001) + strings.Repeat(")", 1001) + "\r\n"
+	if _, err := conn.Write([]byte(command)); err != nil {
+		t.Fatal("Cannot send over-nested command:", err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal("Cannot set read deadline:", err)
+	}
+	if _, err := conn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("Expected server to close over-nested-command connection")
 	}
 }
 

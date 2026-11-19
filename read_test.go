@@ -5,6 +5,8 @@ import (
 	"io"
 	"io/ioutil"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/emersion/go-imap"
@@ -429,6 +431,95 @@ func TestReader_ReadList(t *testing.T) {
 	_, r = newReader("(field1 field2 field3\r\n")
 	if _, err := r.ReadList(); err == nil {
 		t.Error("Invalid read didn't fail")
+	}
+}
+
+func TestReader_ReadListDepth(t *testing.T) {
+	for _, depth := range []int{1000, 1001} {
+		input := strings.Repeat("(", depth) + strings.Repeat(")", depth)
+		_, r := newReader(input)
+		_, err := r.ReadList()
+		if depth == 1000 && err != nil {
+			t.Errorf("depth %d should be accepted, got %v", depth, err)
+		} else if depth == 1001 {
+			if err == nil {
+				t.Errorf("depth %d should be rejected", depth)
+			} else if imap.IsParseError(err) {
+				t.Errorf("depth error should be a plain error, got parse error: %v", err)
+			}
+		}
+	}
+}
+
+func TestReader_ReadLineCommandSize(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		line    string
+		wantErr bool
+	}{
+		{name: "at limit", line: "a NOOP\r\n"},
+		{name: "over limit", line: "a NOOP x\r\n", wantErr: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			b := bytes.NewBufferString(test.line)
+			r := imap.NewServerReader(b, nil)
+			r.MaxCommandSize = int64(len("a NOOP\r\n"))
+			_, err := r.ReadLine()
+			if test.wantErr {
+				if err == nil {
+					t.Fatal("oversized command was accepted")
+				}
+				if imap.IsParseError(err) {
+					t.Fatalf("command size error should be plain, got parse error: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("command at limit was rejected: %v", err)
+			}
+		})
+	}
+}
+
+func TestReader_ReadLineCommandSizeWithLiteral(t *testing.T) {
+	data := strings.Repeat("x", 64)
+	header := "a x {" + strconv.Itoa(len(data)) + "}\r\n"
+	line := header + data + "\r\n"
+	for _, limit := range []int64{int64(len(header) + len("\r\n")), int64(len(header) + len("\r\n") - 1)} {
+		b := bytes.NewBufferString(line)
+		r := imap.NewServerReader(b, nil)
+		r.MaxCommandSize = limit
+		_, err := r.ReadLine()
+		if limit == int64(len(header)+len("\r\n")) && err != nil {
+			t.Fatalf("command size limit %d rejected valid literal command: %v", limit, err)
+		} else if limit == int64(len(header)+len("\r\n")-1) {
+			if err == nil {
+				t.Fatalf("command size limit %d should reject the counted literal framing", limit)
+			}
+			if imap.IsParseError(err) {
+				t.Fatalf("command size error should be plain, got parse error: %v", err)
+			}
+		}
+	}
+}
+
+func TestReader_ReadLineLiteralSize(t *testing.T) {
+	data := strings.Repeat("x", 64)
+	line := "a x {" + strconv.Itoa(len(data)) + "}\r\n" + data + "\r\n"
+	b := bytes.NewBufferString(line)
+	r := imap.NewServerReader(b, nil)
+	r.MaxCommandSize = 20
+	if _, err := r.ReadLine(); err != nil {
+		t.Fatalf("literal payload should not count toward command size: %v", err)
+	}
+}
+
+func TestReader_ReadLineCommandSizeReset(t *testing.T) {
+	b := bytes.NewBufferString("a NOOP\r\nb NOOP\r\n")
+	r := imap.NewServerReader(b, nil)
+	r.MaxCommandSize = int64(len("a NOOP\r\n"))
+	for i := 0; i < 2; i++ {
+		if _, err := r.ReadLine(); err != nil {
+			t.Fatalf("command %d was rejected: %v", i+1, err)
+		}
 	}
 }
 
