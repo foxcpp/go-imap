@@ -50,8 +50,13 @@ func (cmd *Close) Handle(conn Conn) error {
 	}
 
 	mailbox := ctx.Mailbox
+	readOnly := ctx.MailboxReadOnly
 	ctx.Mailbox = nil
 	ctx.MailboxReadOnly = false
+
+	if readOnly {
+		return nil
+	}
 
 	// No need to send expunge updates here, since the mailbox is already unselected
 	return mailbox.Expunge()
@@ -242,12 +247,15 @@ type Move struct {
 }
 
 func (h *Move) handle(uid bool, conn Conn) error {
-	mailbox := conn.Context().Mailbox
-	if mailbox == nil {
+	ctx := conn.Context()
+	if ctx.Mailbox == nil {
 		return ErrNoMailboxSelected
 	}
+	if ctx.MailboxReadOnly {
+		return ErrMailboxReadOnly
+	}
 
-	if m, ok := mailbox.(backend.MoveMailbox); ok {
+	if m, ok := ctx.Mailbox.(backend.MoveMailbox); ok {
 		return m.MoveMessages(uid, h.SeqSet, h.Mailbox)
 	}
 	return errors.New("MOVE extension not supported")
