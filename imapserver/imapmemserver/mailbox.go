@@ -452,11 +452,17 @@ func (mbox *MailboxView) staticSearchCriteria(criteria *imap.SearchCriteria) {
 	}
 }
 
-func (mbox *MailboxView) Store(w *imapserver.FetchWriter, numSet imap.NumSet, flags *imap.StoreFlags, options *imap.StoreOptions) error {
+func (mbox *MailboxView) Store(w *imapserver.FetchWriter, numSet imap.NumSet, flags *imap.StoreFlags, options *imap.StoreOptions) (*imap.StoreData, error) {
+	data := &imap.StoreData{}
+
+	modifiedSeq := imap.SeqSet{}
+	modifiedUID := imap.UIDSet{}
+
 	fetchSet := imap.UIDSet{}
 	mbox.forEach(numSet, func(seqNum uint32, msg *message) {
 		if options.UnchangedSince != nil && msg.modSeq > *options.UnchangedSince {
-			// TODO: Collect and report MODIFIED.
+			modifiedSeq.AddNum(seqNum)
+			modifiedUID.AddNum(msg.uid)
 			return
 		}
 
@@ -469,14 +475,25 @@ func (mbox *MailboxView) Store(w *imapserver.FetchWriter, numSet imap.NumSet, fl
 		mbox.Mailbox.tracker.QueueMessageFlags(seqNum, msg.uid, msg.flagList(), msg.modSeq, mbox.tracker)
 	})
 	if !flags.Silent || options.UnchangedSince != nil {
-		return mbox.Fetch(w, fetchSet, &imap.FetchOptions{
+		err := mbox.Fetch(w, fetchSet, &imap.FetchOptions{
 			// For use with UNCHANGEDSINCE, SILENT hides flag change only, MODSEQ MUST
 			// be returned.
 			Flags:  !flags.Silent,
 			ModSeq: options.UnchangedSince != nil || mbox.conn.EnabledCaps().Has(imap.CapCondStore),
 		})
+		if err != nil {
+			return nil, err
+		}
 	}
-	return nil
+
+	switch numSet.(type) {
+	case imap.SeqSet:
+		data.Modified = modifiedSeq
+	case imap.UIDSet:
+		data.Modified = modifiedUID
+	}
+
+	return data, nil
 }
 
 func (mbox *MailboxView) Poll(w *imapserver.UpdateWriter, allowExpunge bool) error {
