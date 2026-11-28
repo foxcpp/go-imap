@@ -93,7 +93,7 @@ func newMemClientServerPair(t *testing.T) (net.Conn, io.Closer) {
 
 	server := imapserver.New(&imapserver.Options{
 		NewSession: func(conn *imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
-			return memServer.NewSession(), nil, nil
+			return memServer.NewSession(conn), nil, nil
 		},
 		TLSConfig: &tls.Config{
 			Certificates: []tls.Certificate{cert},

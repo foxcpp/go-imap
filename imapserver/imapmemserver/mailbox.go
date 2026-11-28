@@ -283,10 +283,11 @@ func (mbox *Mailbox) expungeLocked(expunged map[*message]struct{}) (seqNums []ui
 // NewView creates a new view into this mailbox.
 //
 // Callers must call MailboxView.Close once they are done with the mailbox view.
-func (mbox *Mailbox) NewView() *MailboxView {
+func (mbox *Mailbox) NewView(conn *imapserver.Conn) *MailboxView {
 	return &MailboxView{
 		Mailbox: mbox,
 		tracker: mbox.tracker.NewSession(),
+		conn:    conn,
 	}
 }
 
@@ -302,6 +303,7 @@ type MailboxView struct {
 	*Mailbox
 	tracker   *imapserver.SessionTracker
 	searchRes imap.UIDSet
+	conn      *imapserver.Conn
 }
 
 // Close releases the resources allocated for the mailbox view.

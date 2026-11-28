@@ -23,8 +23,11 @@ func New() *Server {
 }
 
 // NewSession creates a new IMAP session.
-func (s *Server) NewSession() imapserver.Session {
-	return &serverSession{server: s}
+func (s *Server) NewSession(conn *imapserver.Conn) imapserver.Session {
+	return &serverSession{
+		server: s,
+		conn:   conn,
+	}
 }
 
 func (s *Server) user(username string) *User {
@@ -43,7 +46,8 @@ func (s *Server) AddUser(user *User) {
 type serverSession struct {
 	*UserSession // may be nil
 
-	server *Server // immutable
+	server *Server          // immutable
+	conn   *imapserver.Conn // immutable
 }
 
 var _ imapserver.Session = (*serverSession)(nil)
@@ -56,6 +60,6 @@ func (sess *serverSession) Login(username, password string) error {
 	if err := u.Login(username, password); err != nil {
 		return err
 	}
-	sess.UserSession = NewUserSession(u)
+	sess.UserSession = NewUserSession(u, sess.conn)
 	return nil
 }

@@ -17,13 +17,15 @@ type (
 type UserSession struct {
 	*user    // immutable
 	*mailbox // may be nil
+
+	conn *imapserver.Conn
 }
 
 var _ imapserver.SessionIMAP4rev2 = (*UserSession)(nil)
 
 // NewUserSession creates a new user session.
-func NewUserSession(user *User) *UserSession {
-	return &UserSession{user: user}
+func NewUserSession(user *User, conn *imapserver.Conn) *UserSession {
+	return &UserSession{user: user, conn: conn}
 }
 
 func (sess *UserSession) Close() error {
@@ -40,7 +42,7 @@ func (sess *UserSession) Select(name string, options *imap.SelectOptions) (*imap
 	}
 	mbox.mutex.Lock()
 	defer mbox.mutex.Unlock()
-	sess.mailbox = mbox.NewView()
+	sess.mailbox = mbox.NewView(sess.conn)
 	return mbox.selectDataLocked(), nil
 }
 

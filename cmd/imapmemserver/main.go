@@ -112,7 +112,7 @@ func main() {
 
 	server := imapserver.New(&imapserver.Options{
 		NewSession: func(conn *imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
-			return memServer.NewSession(), nil, nil
+			return memServer.NewSession(conn), nil, nil
 		},
 		Caps: imap.CapSet{
 			imap.CapIMAP4rev1: {},
