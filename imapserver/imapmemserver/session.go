@@ -40,10 +40,13 @@ func (sess *UserSession) Select(name string, options *imap.SelectOptions) (*imap
 	if err != nil {
 		return nil, err
 	}
+
+	options.CondStore = options.CondStore || sess.conn.EnabledCaps().Has(imap.CapCondStore)
+
 	mbox.mutex.Lock()
 	defer mbox.mutex.Unlock()
 	sess.mailbox = mbox.NewView(sess.conn)
-	return mbox.selectDataLocked(), nil
+	return mbox.selectDataLocked(options), nil
 }
 
 func (sess *UserSession) Unselect() error {
