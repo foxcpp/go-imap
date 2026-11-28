@@ -31,11 +31,7 @@ func (c *Conn) handleEnable(dec *imapwire.Decoder) error {
 		}
 	}
 
-	c.mutex.Lock()
-	for _, e := range enabled {
-		c.enabled[e] = struct{}{}
-	}
-	c.mutex.Unlock()
+	c.enable(enabled...)
 
 	enc := newResponseEncoder(c)
 	defer enc.end()
@@ -44,4 +40,17 @@ func (c *Conn) handleEnable(dec *imapwire.Decoder) error {
 		enc.SP().Atom(string(c))
 	}
 	return enc.CRLF()
+}
+
+func (c *Conn) enable(caps ...imap.Cap) bool {
+	hasNew := false
+	c.mutex.Lock()
+	for _, e := range caps {
+		if _, ok := c.enabled[e]; !ok {
+			hasNew = true
+		}
+		c.enabled[e] = struct{}{}
+	}
+	c.mutex.Unlock()
+	return hasNew
 }
