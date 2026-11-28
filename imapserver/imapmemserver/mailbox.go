@@ -351,7 +351,11 @@ func (mbox *MailboxView) Fetch(w *imapserver.FetchWriter, numSet imap.NumSet, op
 
 		if markSeen {
 			msg.flags[canonicalFlag(imap.FlagSeen)] = struct{}{}
-			mbox.Mailbox.tracker.QueueMessageFlags(seqNum, msg.uid, msg.flagList(), nil)
+
+			mbox.highestModSeq++
+			msg.modSeq = mbox.highestModSeq
+
+			mbox.Mailbox.tracker.QueueMessageFlags(seqNum, msg.uid, msg.flagList(), msg.modSeq, nil)
 		}
 
 		respWriter := w.CreateMessage(mbox.tracker.EncodeSeqNum(seqNum))
@@ -462,11 +466,13 @@ func (mbox *MailboxView) Store(w *imapserver.FetchWriter, numSet imap.NumSet, fl
 		msg.modSeq = mbox.highestModSeq
 		fetchSet.AddNum(msg.uid)
 
-		mbox.Mailbox.tracker.QueueMessageFlags(seqNum, msg.uid, msg.flagList(), mbox.tracker)
+		mbox.Mailbox.tracker.QueueMessageFlags(seqNum, msg.uid, msg.flagList(), msg.modSeq, mbox.tracker)
 	})
-	if !flags.Silent {
+	if !flags.Silent || options.UnchangedSince != nil {
 		return mbox.Fetch(w, fetchSet, &imap.FetchOptions{
-			Flags:  true,
+			// For use with UNCHANGEDSINCE, SILENT hides flag change only, MODSEQ MUST
+			// be returned.
+			Flags:  !flags.Silent,
 			ModSeq: options.UnchangedSince != nil || mbox.conn.EnabledCaps().Has(imap.CapCondStore),
 		})
 	}
