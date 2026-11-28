@@ -22,3 +22,8 @@ type StoreFlags struct {
 	Silent bool
 	Flags  []Flag
 }
+
+// StoreData is additional information returned by the STORE command.
+type StoreData struct {
+	Modified NumSet
+}
