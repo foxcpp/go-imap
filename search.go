@@ -89,6 +89,23 @@ func (criteria *SearchCriteria) And(other *SearchCriteria) {
 	criteria.Or = append(criteria.Or, other.Or...)
 }
 
+func (criteria *SearchCriteria) HasModSeq() bool {
+	if criteria.ModSeq != nil {
+		return true
+	}
+	for _, not := range criteria.Not {
+		if not.HasModSeq() {
+			return true
+		}
+	}
+	for _, or := range criteria.Or {
+		if or[0].HasModSeq() || or[1].HasModSeq() {
+			return true
+		}
+	}
+	return false
+}
+
 func intersectSince(t1, t2 time.Time) time.Time {
 	switch {
 	case t1.IsZero():
