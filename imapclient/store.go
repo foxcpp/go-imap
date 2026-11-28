@@ -19,8 +19,8 @@ func (c *Client) Store(numSet imap.NumSet, store *imap.StoreFlags, options *imap
 	}
 	enc := c.beginCommand(uidCmdName("STORE", imapwire.NumSetKind(numSet)), cmd)
 	enc.SP().NumSet(numSet).SP()
-	if options != nil && options.UnchangedSince != 0 {
-		enc.Special('(').Atom("UNCHANGEDSINCE").SP().ModSeq(options.UnchangedSince).Special(')').SP()
+	if options != nil && options.UnchangedSince != nil {
+		enc.Special('(').Atom("UNCHANGEDSINCE").SP().ModSeq(*options.UnchangedSince).Special(')').SP()
 	}
 	switch store.Op {
 	case imap.StoreFlagsSet:
